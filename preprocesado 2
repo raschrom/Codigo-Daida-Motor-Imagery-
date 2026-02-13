@@ -1,0 +1,115 @@
+import mne
+import numpy as np
+
+
+bdf_files = [
+    "Lucas_FlexoExtension_Motor_Der2.bdf",
+    "Lucas_FlexoExtension_Motor_Der3.bdf",
+    "Lucas_FlexoExtension_Motor_Der4.bdf",
+    "Lucas_FlexoExtension_Motor_Der5.bdf",
+    "Lucas_FlexoExtension_Motor_Der6.bdf",
+    "Lucas_FlexoExtension_Motor_Der7.bdf",
+    "Lucas_FlexoExtension_Motor_Der8.bdf",
+    "Lucas_FlexoExtension_Motor_Der9.bdf",
+]
+
+EVENT_ID = {
+    "extension": 1,
+    "cerrado": 2
+}
+
+TMIN = -1
+TMAX = 0.5
+WINDOW_LENGTH = 1.5
+
+
+print("Cargando EEG...")
+raws = [
+    mne.io.read_raw_bdf(
+        f,
+        preload=True,
+        stim_channel="Status"
+    )
+    for f in bdf_files
+]
+#aqui al filtrar primero a EEG me daba problemas con el 'status' así que cambio el orden
+
+raw = mne.concatenate_raws(raws)
+
+#aqui esta el clasificador anitguo con solo ds salidas 
+
+print("Extrayendo eventos...")
+events = mne.find_events(raw, stim_channel="Status")
+import numpy as np
+print("IDs únicos:", np.unique(events[:, 2], return_counts=True))
+
+
+
+#Y este es el nuevo con etiquetas de instantes y ventanas para 0,1,2 (con reposo)
+
+sfreq = raw.info["sfreq"]
+n_times = raw.n_times  #todas las muestras del registro
+
+TASK_DUR = 1.5
+task_samp = int(round(TASK_DUR * sfreq))
+
+y_t = np.zeros(n_times, dtype=np.int16)  # 0 reposo lo establecemos como predeterminado
+for samp, _, code in events:
+    start = int(samp)
+    end = min(start + task_samp, n_times)
+    y_t[start:end] = int(code)  # 1 o 2
+
+print("Estados (0/1/2) en todo el registro:", np.unique(y_t, return_counts=True))
+
+
+# Ahora solo EEG (el print es para ver los canales que se recnocen como eeg, que son 18, al filtrar por nombre solo nos quedamos con los electrodos)
+
+#for name, typ in zip(raw.ch_names, raw.get_channel_types()):
+#    print(f"{name:>12}  {typ}")
+
+#el filtro de los primeros 8
+
+
+eeg_channels = [f"EEG {i}" for i in range(1, 9)]
+raw.pick(eeg_channels)
+
+#ventanas + etiquetas por ventana. Lo que hacee es dividir las ventanas en instantes (en 250Hz) 
+raw_f = raw.copy().filter(8., 30., verbose=False)
+
+sfreq = raw_f.info["sfreq"]
+win_sec = 1.5    #tiempo de cada ventana
+step_sec = 0.25  #timepo entre ventanas (se solpan, no se si dara problemas) 
+win = int(round(win_sec * sfreq))  #instantes en una ventana
+step = int(round(step_sec * sfreq))   #instantes entre ventanas
+
+Xsig = raw_f.get_data()  # matriz (canales, muestras)
+starts = np.arange(0, raw_f.n_times - win, step)  #donde n_times son el numero de muestras
+
+# ventanas
+windows = np.stack([Xsig[:, s:s+win] for s in starts], axis=0) #la ventana tiene la forma (num ventanas, canales, muestras por ventana)
+
+# etiqueta por ventana, quien es el estado ganador. 
+#La etiqueta es de cada ventana, no de cada muestra!!
+#pero se etiquetan las muestras para dar un ganador de ventana
+
+y_win = np.zeros(len(starts), dtype=np.int16) #esto es un vector vacío donde meter la etiqueta de cada ventana
+for i, s in enumerate(starts):
+    seg = y_t[s:s+win]   #aqui se elige desde el inicio 's' hasta el final de esa ventana 's+win' ya que win es la longitud de una ventana en instantes
+    y_win[i] = np.bincount(seg, minlength=3).argmax()   #y aqui se cuentan cuantas hay de cada tipo y se elige el valor que más hay (0,1,2)
+
+print("Estados por ventana:", np.unique(y_win, return_counts=True))   #print de cuantas ventanas hay de cada clase
+
+
+
+# Features log-var por canal
+X_feat = np.log(np.var(windows, axis=2) + 1e-12)   #(num ventanas, num canales)
+
+#aqui estamos solo quedandonos con las ventanas en las que el 90% o más es la misma respuesta, las demás las descartamos...
+def purity(seg):
+    c = np.bincount(seg, minlength=3)
+    return c.max()/c.sum()  #nos da el porentaje
+
+mask = np.array([purity(y_t[s:s+win]) >= 0.9 for s in starts])
+X_train = X_feat[mask]
+y_train = y_win[mask]
+print("Train:", X_train.shape, np.unique(y_train, return_counts=True))
