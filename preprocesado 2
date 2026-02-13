@@ -40,7 +40,6 @@ raw = mne.concatenate_raws(raws)
 
 print("Extrayendo eventos...")
 events = mne.find_events(raw, stim_channel="Status")
-import numpy as np
 print("IDs únicos:", np.unique(events[:, 2], return_counts=True))
 
 
