@@ -3,14 +3,14 @@ import numpy as np
 
 
 bdf_files = [
-    "Lucas_FlexoExtension_Motor_Der2.bdf",
-    "Lucas_FlexoExtension_Motor_Der3.bdf",
-    "Lucas_FlexoExtension_Motor_Der4.bdf",
-    "Lucas_FlexoExtension_Motor_Der5.bdf",
-    "Lucas_FlexoExtension_Motor_Der6.bdf",
-    "Lucas_FlexoExtension_Motor_Der7.bdf",
-    "Lucas_FlexoExtension_Motor_Der8.bdf",
-    "Lucas_FlexoExtension_Motor_Der9.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der2.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der3.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der4.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der5.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der6.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der7.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der8.bdf",
+    "datos/Lucas_FlexoExtension_Motor_Der9.bdf",
 ]
 
 EVENT_ID = {
@@ -43,8 +43,8 @@ events = mne.find_events(raw, stim_channel="Status")
 print("IDs únicos:", np.unique(events[:, 2], return_counts=True))
 
 
-
-#Y este es el nuevo con etiquetas de instantes y ventanas para 0,1,2 (con reposo)
+#comenzamos aqui con el procesado por muestras y ventanas
+#este es el nuevo con etiquetas de instantes y ventanas para 0,1,2 (con reposo)
 
 sfreq = raw.info["sfreq"]
 n_times = raw.n_times  #todas las muestras del registro
@@ -85,8 +85,8 @@ Xsig = raw_f.get_data()  # matriz (canales, muestras)
 starts = np.arange(0, raw_f.n_times - win, step)  #donde n_times son el numero de muestras
 
 # ventanas
-windows = np.stack([Xsig[:, s:s+win] for s in starts], axis=0) #la ventana tiene la forma (num ventanas, canales, muestras por ventana)
-
+windows = np.stack([Xsig[:, s:s+win] for s in starts], axis=0) 
+#la ventana tiene la forma (num ventanas, canales, muestras por ventana)
 # etiqueta por ventana, quien es el estado ganador. 
 #La etiqueta es de cada ventana, no de cada muestra!!
 #pero se etiquetan las muestras para dar un ganador de ventana
@@ -111,4 +111,4 @@ def purity(seg):
 mask = np.array([purity(y_t[s:s+win]) >= 0.9 for s in starts])
 X_train = X_feat[mask]
 y_train = y_win[mask]
-print("Train:", X_train.shape, np.unique(y_train, return_counts=True))
+print("Train:", X_train.shape, np.unique(y_train, return_counts=True))  
